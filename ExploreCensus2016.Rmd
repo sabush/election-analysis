@@ -1,0 +1,37 @@
+---
+title: "Explore Census2016 Package"
+output: html_notebook
+---
+
+It looks like Raustats might not be what I am looking for to get SLA level census data quickly. Let's try Census2016 from Hugh Parsonage.
+
+```{r, warning=FALSE, echo=FALSE, error=FALSE, message=FALSE}
+library(tidyverse)
+library(Census2016)
+```
+
+```{r}
+full_2016_census <- Census2016_wide_by_SA2_year %>% 
+  filter(year == '2016' )
+head(full_2016_census)
+```
+
+Yes - this is what I need.
+
+Loading other tables
+
+```{r}
+ancestories_2016 <- Census2016_ancestories %>% 
+  filter(year == '2016' )
+countries_of_birth_2016 <- Census2016_countries_of_birth %>% 
+  filter(year == '2016' )
+languages_2016 <- Census2016_languages %>% 
+  filter(year == '2016' )
+religions_2016 <- Census2016_religions %>% 
+  filter(year == '2016' )
+```
+
+# Feature Engineering
+
+
+

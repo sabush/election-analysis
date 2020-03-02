@@ -1,0 +1,24 @@
+---
+title: "Exploring the Raustats package"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(raustats)
+```
+
+```{r}
+x <- abs_search(pattern = "Census")
+```
+
+```{r}
+datasets <- abs_datasets()
+head(datasets)
+```
+
+```{r}
+abs_dimensions("ABS_C16_T01_LGA")
+census16 <- abs_stats(dataset="ABS_C16_T01_LGA", filter = list(STATE = 'ACT'))
+```
+

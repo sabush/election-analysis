@@ -440,13 +440,15 @@ Division_Classifications <- webpage %>%
   .[[1]]
 Division_Classifications <- Division_Classifications %>% 
   filter(Division != 'Total Enrolment')
+
+polling_place_2pp_clean<- polling_place_2pp_clean %>% 
+  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
+  inner_join(Division_Classifications)
 ```
 
 The graph below shows that the booths that have a low ALP 2pp and a low median income are primarily rural booths. This relationship seems stronger than the Lib/Nat split.
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   filter(StateAb == 'NSW') %>% 
   ggplot(aes(y = ALP_Percent/100, x = median_household_income, colour = Demographic)) +
   geom_point(size = 1) +
@@ -463,8 +465,6 @@ polling_place_2pp_clean %>%
 Looking at all states we see a similar relationship, although less strong than in NSW.
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = median_household_income, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -480,8 +480,6 @@ What about some of the other variables?
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = average_household_size, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -494,8 +492,6 @@ polling_place_2pp_clean %>%
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = percent_female, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -519,8 +515,6 @@ polling_place_2pp_clean %>%
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = persons_per_bedroom, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -533,8 +527,6 @@ polling_place_2pp_clean %>%
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = percent_unit, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -548,8 +540,6 @@ polling_place_2pp_clean %>%
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = percent_mortgage, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -563,8 +553,6 @@ polling_place_2pp_clean %>%
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = percent_rent, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -578,8 +566,6 @@ polling_place_2pp_clean %>%
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = percent_indig, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -593,8 +579,6 @@ polling_place_2pp_clean %>%
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = percent_born_in_australia, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -608,8 +592,6 @@ polling_place_2pp_clean %>%
 
 ```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
 polling_place_2pp_clean %>% 
-  mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications) %>% 
   ggplot(aes(y = ALP_Percent/100, x = percent_defacto, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
@@ -621,27 +603,191 @@ polling_place_2pp_clean %>%
        subtitle = 'by Polling Booth, Unweighted')
 ```
 
+# What to do next?
+
+Add extra variables
+Look at lagged results
+Build models
+
+# Simple Model Building
+
+## Linear Models
+
+Can we build a simple linear model to predict 2pp
+
+```{r}
+library(MASS)
+library(car)
+alp_2pp_lm_demog <- 
+  lm(ALP_Percent ~ median_household_income*Demographic + percent_indig + 
+       percent_female + percent_defacto + percent_born_in_australia + 
+       percent_rent + median_weekly_rent + median_age, 
+     data = polling_place_2pp_clean)
+
+summary(alp_2pp_lm_demog)
+anova(alp_2pp_lm_demog)
+plot(alp_2pp_lm_demog)
+vif(alp_2pp_lm_demog)
+# crPlots(alp_2pp_lm_demog)
+# ceresPlots(alp_2pp_lm_demog)
+
+library(gvlma)
+gv_alp_2pp_lm_demog <- gvlma(alp_2pp_lm_demog)
+summary(gv_alp_2pp_lm_demog)
+```
 
 
+```{r}
+library(MASS)
+library(car)
+alp_2pp_lm_demog <- 
+  lm(ALP_Percent ~ median_household_income + Demographic + percent_indig + 
+       percent_defacto + percent_born_in_australia + 
+       percent_rent + median_weekly_rent + median_age, 
+     data = polling_place_2pp_clean)
+
+summary(alp_2pp_lm_demog)
+anova(alp_2pp_lm_demog)
+plot(alp_2pp_lm_demog)
+vif(alp_2pp_lm_demog)
+crPlots(alp_2pp_lm_demog)
+ceresPlots(alp_2pp_lm_demog)
+
+library(gvlma)
+gv_alp_2pp_lm_demog <- gvlma(alp_2pp_lm_demog)
+summary(gv_alp_2pp_lm_demog)
+```
+
+We know that income is important in the non-rural areas, so it might be worth adding an interaction between rural and non-rural and income.
+
+```{r}
+polling_place_2pp_clean <- polling_place_2pp_clean %>% 
+  mutate(NonRural_Demographic = if_else(Demographic == 'Rural', 1, 0),
+         ALP_Percent_2013 = ALP_Percent + Swing)
+
+alp_2pp_lm_demog <- 
+  lm(ALP_Percent ~ median_household_income + Demographic + percent_indig + 
+       percent_defacto + percent_born_in_australia + 
+       percent_rent + median_weekly_rent + median_age +
+       NonRural_Demographic:median_household_income, 
+     data = polling_place_2pp_clean)
+
+summary(alp_2pp_lm_demog)
+anova(alp_2pp_lm_demog)
+plot(alp_2pp_lm_demog)
+vif(alp_2pp_lm_demog)
+# crPlots(alp_2pp_lm_demog)
+# ceresPlots(alp_2pp_lm_demog)
+
+gv_alp_2pp_lm_demog <- gvlma(alp_2pp_lm_demog)
+summary(gv_alp_2pp_lm_demog)
+```
 
 
+## Lasso Regression
+
+Using a lasso regression, 
+
+```{r}
+library(caret)
+library(glmnet)
+
+polling_place_2pp_clean_NA <- na.omit(polling_place_2pp_clean) %>% 
+  dplyr::select(ALP_Percent, StateAb, median_age, median_household_income, 
+                average_household_size, persons_per_bedroom, median_weekly_rent,
+                median_annual_mortgage,  percent_female, percent_defacto, 
+                percent_married, percent_indig, percent_born_in_australia, 
+                percent_unit, percent_mortgage, percent_rent, Demographic)
+# Inspect the data
+sample_n(polling_place_2pp_clean_NA, 3)
+# Split the data into training and test set
+set.seed(123)
+training.samples <- polling_place_2pp_clean_NA$ALP_Percent %>% 
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- polling_place_2pp_clean_NA[training.samples, ]
+test.data <- polling_place_2pp_clean_NA[-training.samples, ]
+
+# Dumy code categorical predictor variables
+x <- model.matrix(ALP_Percent~., train.data)[,-1]
+# Convert the outcome (class) to a numerical variable
+y <- train.data$ALP_Percent
+
+cv.lasso <- cv.glmnet(x, y, alpha = 1, family = "gaussian")
+
+# Fit the final model on the training data
+alp_2pp_lasso_demog <- glmnet(x, y, alpha = 1, family = "gaussian",
+                              lambda = cv.lasso$lambda.min)
+# Display regression coefficients
+coef(alp_2pp_lasso_demog)
+
+summary(alp_2pp_lasso_demog)
+
+alp_2pp_lasso_demog$dev.ratio
+
+# Make predictions on the test data
+x.test <- model.matrix(ALP_Percent ~., test.data)[,-1]
+predictions <- alp_2pp_lasso_demog %>% predict(newx = x.test)
+# Model accuracy
+observed <- test.data$ALP_Percent
+
+plot(predictions, observed)
+cor(predictions, observed)
+
+cor(predictions, observed)^2
+```
 
 
+What if we include the 2pp from the last election. It appears that Swing is defined as the swing to the Coalition between 2013 and 2016. So if we add the swing to the 2016 2pp, then we obtain the 2013 2pp.
 
+When using a Linear Model, we can get an R^2 of about 84%
+```{r}
+polling_place_2pp_clean <- polling_place_2pp_clean %>% 
+  mutate(logit_ALP_Percent = log((ALP_Percent/100)/(1-ALP_Percent/100)),
+         logit_ALP_Percent_2013 = log((ALP_Percent_2013/100)/(1-ALP_Percent_2013/100))) %>% 
+  filter(!is.nan(logit_ALP_Percent)) %>% 
+  filter(!is.na(logit_ALP_Percent)) %>% 
+  filter(!is.infinite(logit_ALP_Percent)) %>% 
+  filter(!is.nan(logit_ALP_Percent_2013)) %>% 
+  filter(!is.na(logit_ALP_Percent_2013)) %>% 
+  filter(!is.infinite(logit_ALP_Percent_2013))
 
+alp_2pp_lm_demog_lag <- 
+  lm(logit_ALP_Percent ~ percent_indig + percent_defacto +
+       percent_rent + median_weekly_rent + median_age + 
+       NonRural_Demographic*median_household_income + logit_ALP_Percent_2013, 
+     data = polling_place_2pp_clean)
 
+summary(alp_2pp_lm_demog_lag)
+anova(alp_2pp_lm_demog_lag)
+plot(alp_2pp_lm_demog_lag)
+vif(alp_2pp_lm_demog_lag)
+# crPlots(alp_2pp_lm_demog_lag)
+# ceresPlots(alp_2pp_lm_demog_lag)
 
+gv_alp_2pp_lm_demog_lag <- gvlma(alp_2pp_lm_demog_lag)
+summary(alp_2pp_lm_demog_lag)
+```
 
+It would be interesting to see whether 2013 alone is a good predictor. Fitting this model gives an R^2 of 82.7%. This means that the other variables add a bit, but not a huge amount. 
+```{r}
+alp_2pp_lm_demog_lag <- 
+  lm(logit_ALP_Percent ~ logit_ALP_Percent_2013, 
+     data = polling_place_2pp_clean)
 
+summary(alp_2pp_lm_demog_lag)
+anova(alp_2pp_lm_demog_lag)
+plot(alp_2pp_lm_demog_lag)
+```
 
+There are three outlying values - let's explore these
 
+```{r}
+polling_place_2pp_clean[c(2079, 7267, 2758),]
+```
 
+These booths have fewer than 40 electors, and fewer than 5 for one of the two parties. They are also 'non-standard' booths.
 
-
-
-
-
-
+It might be interesting to see which booths deviate from the division mean.
 
 
 

@@ -1,9 +1,48 @@
 ---
-title: "Explore Census2016 Package"
-output: html_notebook
+title: "Using the Census2016 Package to enrich election analysis"
+author: "Stephen Bush"
+output:
+  html_document:
+    toc: yes
+    toc_depth: "2"
+    number_sections: yes
+    toc_float: yes
+    fig_width: 12
+    fig_height: 8
+    df_print: paged
+    code_folding: hide
+  html_notebook:
+    toc: yes
+    toc_depth: 2
+    number_sections: yes
+    toc_float: yes
+    fig_width: 12
+    fig_height: 8
+    df_print: paged
+    code_folding: hide
 ---
 
-It looks like Raustats might not be what I am looking for to get SLA level census data quickly. Let's try Census2016 from Hugh Parsonage.
+<style type="text/css">
+.main-container {
+max-width: 800px;
+margin-left: auto;
+margin-right: auto;
+}
+</style>
+
+<style>
+pre {
+overflow-x: auto;
+}
+pre code {
+word-wrap: normal;
+white-space: pre;
+}
+</style>
+
+# Introduction
+
+It looks like Raustats might not be what I am looking for to get SLA level census data quickly. Let"s try Census2016 from Hugh Parsonage.
 
 ```{r, warning=FALSE, echo=FALSE, error=FALSE, message=FALSE}
 library(tidyverse)
@@ -12,14 +51,24 @@ library(eechidna)
 library(RColorBrewer)
 library(janitor)
 library(kableExtra)
-knitr::opts_chunk$set(warning=FALSE)
-# knitr::opts_chunk$set(error=FALSE)
-knitr::opts_chunk$set(message=FALSE)
+library(skimr)
+library(rvest)
+library(MASS)
+library(car)
+library(gvlma)
+library(caret)
+library(glmnet)
+library(gbm)
+library(rsample)
+
+knitr::opts_chunk$set(message = FALSE)
+options(scipen = 1000)
+options(width = 800)
 ```
 
-```{r}
-full_2016_census <- Census2016_wide_by_SA2_year %>% 
-  filter(year == '2016' )
+```{r, error=F, message=F, warning=F}
+full_2016_census <- Census2016_wide_by_SA2_year %>%
+  filter(year == "2016")
 head(full_2016_census)
 ```
 
@@ -27,580 +76,645 @@ Yes - this is what I need.
 
 Loading other tables
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-ancestories_2016 <- Census2016_ancestories %>% 
-  filter(year == '2016' )
-countries_of_birth_2016 <- Census2016_countries_of_birth %>% 
-  filter(year == '2016' )
-languages_2016 <- Census2016_languages %>% 
-  filter(year == '2016' )
-religions_2016 <- Census2016_religions %>% 
-  filter(year == '2016' )
+```{r, error=F, message=F, warning=F}
+ancestories_2016 <- Census2016_ancestories %>%
+  filter(year == "2016")
+countries_of_birth_2016 <- Census2016_countries_of_birth %>%
+  filter(year == "2016")
+languages_2016 <- Census2016_languages %>%
+  filter(year == "2016")
+religions_2016 <- Census2016_religions %>%
+  filter(year == "2016")
 ```
 
 # Feature Engineering
 
 Each of the four variables ancestory, country of birth, languages and religions are quite granular, and it may make sense to look at these variables at a lower level of granularity. 
 
-Ancestory:
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-download.file('https://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&12490do0001_201912.xls&1249.0&Data%20Cubes&674EFC4CA0A3D8FDCA2584D30012B905&0&2019&18.12.2019&Latest', './Data/ancestry_classification.xls', method = 'libcurl')
+<!-- Ancestory: -->
+<!-- ```{r, error=F, message=F, warning=F} -->
+<!-- download.file("https://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&12490do0001_201912.xls&1249.0&Data%20Cubes&674EFC4CA0A3D8FDCA2584D30012B905&0&2019&18.12.2019&Latest", "./Data/ancestry_classification.xls", method = "libcurl") -->
 
-ancestry_classification_4dig <- 
-  readxl::read_xls('./Data/ancestry_classification.xls', sheet = 'Table 1.3', 
-                   skip = 7, col_names = c('X1', 'X2', 'Ancestory_Code_4', 'Ancestory')) %>% 
-  filter(!is.na(Ancestory)) %>% 
-  select(Ancestory_Code_4, Ancestory)
+<!-- ancestry_classification_4dig <-  -->
+<!--   readxl::read_xls("./Data/ancestry_classification.xls", sheet = "Table 1.3",  -->
+<!--                    skip = 7, col_names = c("X1", "X2", "Ancestory_Code_4", "Ancestory")) %>% -->
+<!--   filter(!is.na(Ancestory)) %>% -->
+<!--   select(Ancestory_Code_4, Ancestory) -->
 
-ancestry_classification_1dig <- 
-  readxl::read_xls('./Data/ancestry_classification.xls', sheet = 'Table 1.1', 
-                   skip = 5, col_names = c('Ancestory_Code_1', 'Ancestory_Group'))%>% 
-  filter(!is.na(Ancestory_Group))
-```
+<!-- ancestry_classification_1dig <-  -->
+<!--   readxl::read_xls("./Data/ancestry_classification.xls", sheet = "Table 1.1",  -->
+<!--                    skip = 5, col_names = c("Ancestory_Code_1", "Ancestory_Group"))%>% -->
+<!--   filter(!is.na(Ancestory_Group)) -->
+<!-- ``` -->
 
 Country of birth
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-download.file('https://www.abs.gov.au/ausstats/subscriber.nsf/log?openagent&sacc_12690do0001_201903.xls&1269.0&Data%20Cubes&480BD730AF42D515CA2583BD007707C5&0&2016&15.03.2019&Latest', './Data/country_classification.xls', method = 'libcurl')
+```{r, error=F, message=F, warning=F}
+if (!file.exists("./Data/country_classification.xls")) {
+  download.file("https://www.abs.gov.au/ausstats/subscriber.nsf/log?openagent&sacc_12690do0001_201903.xls&1269.0&Data%20Cubes&480BD730AF42D515CA2583BD007707C5&0&2016&15.03.2019&Latest", "./Data/country_classification.xls", method = "libcurl")
+}
+country_classification_4dig <-
+  readxl::read_xls("./Data/country_classification.xls",
+                   sheet = "Table 1.3", skip = 7,
+                   col_names = c("X1", "X2", "Country_Code_4", "Country")) %>%
+  filter(!is.na(Country)) %>%
+  dplyr::select(-X1, -X2)
 
-country_classification_4dig <- 
-  readxl::read_xls('./Data/country_classification.xls', sheet = 'Table 1.3', 
-                   skip = 7, col_names = c('X1', 'X2', 'Country_Code_4', 'Country')) %>% 
-  filter(!is.na(Country)) %>% 
-  select(-X1, -X2)
+country_classification_2dig <-
+  readxl::read_xls("./Data/country_classification.xls",
+                   sheet = "Table 1.2", skip = 6,
+                   col_names = c("X1", "Country_Code_2", "Country_Name_2")) %>%
+  filter(!is.na(Country_Name_2)) %>%
+  dplyr::select(-X1)
 
-country_classification_2dig <- 
-  readxl::read_xls('./Data/country_classification.xls', sheet = 'Table 1.2', 
-                   skip = 6, col_names = c('X1', 'Country_Code_2', 'Country_Name_2')) %>% 
-  filter(!is.na(Country_Name_2)) %>% 
-  select(-X1)
-
-country_classification_1dig <- 
-  readxl::read_xls('./Data/country_classification.xls', sheet = 'Table 1.1', 
-                   skip = 5, col_names = c('Country_Code_1', 'Country_Group')) %>% 
+country_classification_1dig <-
+  readxl::read_xls("./Data/country_classification.xls",
+                   sheet = "Table 1.1", skip = 5,
+                   col_names = c("Country_Code_1", "Country_Group")) %>%
   filter(!is.na(Country_Group))
 ```
 
 Language
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-download.file('https://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&ASCL_12670DO0001_201703.xls&1267.0&Data%20Cubes&F84620CF6E13F7E8CA257FF1001E68A7&0&2016&28.03.2017&Latest', './Data/language_classification.xls', method = 'libcurl')
+```{r, error=F, message=F, warning=F}
+if (!file.exists("./Data/language_classification.xls")) {
+  download.file("https://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&ASCL_12670DO0001_201703.xls&1267.0&Data%20Cubes&F84620CF6E13F7E8CA257FF1001E68A7&0&2016&28.03.2017&Latest", "./Data/language_classification.xls", method = "libcurl")
+}
 
-language_classification_4dig <- 
-  readxl::read_xls('./Data/language_classification.xls', sheet = 'Table 1.3', 
-                   skip = 8, col_names = c('X1', 'X2', 'X3', 'X4', 'Language_Code_3', 'Language')) %>% 
-  filter(!is.na(Language)) %>% 
-  select(-X1, -X2, -X3, -X4)
 
-language_classification_1dig <- 
-  readxl::read_xls('./Data/language_classification.xls', sheet = 'Table 1.1', 
-                   skip = 5, col_names = c('Language_Code_1', 'Language_Group')) %>% 
+
+language_classification_4dig <-
+  readxl::read_xls("./Data/language_classification.xls",
+                   sheet = "Table 1.3", skip = 8,
+                   col_names =
+                     c("X1", "X2", "X3", "X4",
+                       "Language_Code_3", "Language")) %>%
+  filter(!is.na(Language)) %>%
+  dplyr::select(-X1, -X2, -X3, -X4)
+
+language_classification_1dig <-
+  readxl::read_xls("./Data/language_classification.xls",
+                   sheet = "Table 1.1", skip = 5,
+                   col_names = c("Language_Code_1", "Language_Group")) %>%
   filter(!is.na(Language_Group))
 ```
 
 Religion
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-download.file('https://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&ASCRG_12660DO0001_201707.xls&1266.0&Data%20Cubes&B3EAFE3FE6180D37CA257FF1001E673C&0&2016&14.07.2017&Latest', './Data/religion_classification.xls', method = 'libcurl')
+```{r, error=F, message=F, warning=F}
+if (!file.exists("./Data/religion_classification.xls")) {
+  download.file("https://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&ASCRG_12660DO0001_201707.xls&1266.0&Data%20Cubes&B3EAFE3FE6180D37CA257FF1001E673C&0&2016&14.07.2017&Latest", "./Data/religion_classification.xls", method = "libcurl")
+}
 
-religion_classification_3dig <- 
-  readxl::read_xls('./Data/religion_classification.xls', sheet = 'Table 1.2', 
-                   skip = 6, col_names = c('X1', 'Religion_Code_3', 'Religion')) %>% 
-  filter(!is.na(Religion)) %>% 
-  select(-X1)
 
-religion_classification_1dig <- 
-  readxl::read_xls('./Data/religion_classification.xls', sheet = 'Table 1.1', 
-                   skip = 5, col_names = c('Religion_Code_1', 'Religion_Group')) %>% 
+religion_classification_3dig <-
+  readxl::read_xls("./Data/religion_classification.xls",
+                   sheet = "Table 1.2", skip = 6,
+                   col_names = c("X1", "Religion_Code_3", "Religion")) %>%
+  filter(!is.na(Religion)) %>%
+  dplyr::select(-X1)
+
+religion_classification_1dig <-
+  readxl::read_xls("./Data/religion_classification.xls",
+                   sheet = "Table 1.1", skip = 5,
+                   col_names = c("Religion_Code_1", "Religion_Group")) %>%
   filter(!is.na(Religion_Group))
 ```
-
-
-
 
 # Combine with election data
 
 Aggregate at the SA2 level - add unless variable contains median, average, persons_per_bedroom
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-census_2016_all_vars <- Census2016_wide_by_SA2_year %>% 
-  filter(year == '2016') %>% 
-  rowwise() %>% 
-  mutate(sa2_id = paste0(substr(sa2_code, 1, 1), substr(sa2_code, 6, 9))) %>% 
-  filter(isMissing == FALSE) %>% 
-  mutate(percent_female = female/persons,
-         percent_defacto = defacto_persons/persons,
-         percent_married = married_persons/persons,
-         percent_indig = indig_persons/persons,
-         percent_born_in_australia = born_in_australia/persons,
-         percent_unit = flat_or_unit/n_dwellings,
-         percent_mortgage = dwelling_owned_mortgage/n_dwellings,
-         percent_rent = dwelling_rented/n_dwellings)
+```{r, error=F, message=F, warning=F}
+census_2016_all_vars <- Census2016_wide_by_SA2_year %>%
+  filter(year == "2016") %>%
+  rowwise() %>%
+  mutate(sa2_id = paste0(substr(sa2_code, 1, 1), substr(sa2_code, 6, 9))) %>%
+  filter(isMissing == FALSE) %>%
+  mutate(percent_female = female / persons,
+         percent_defacto = defacto_persons / persons,
+         percent_married = married_persons / persons,
+         percent_indig = indig_persons / persons,
+         percent_born_in_australia = born_in_australia / persons,
+         percent_unit = flat_or_unit / n_dwellings,
+         percent_mortgage = dwelling_owned_mortgage / n_dwellings,
+         percent_rent = dwelling_rented / n_dwellings)
 
 
-census_2016_means <- census_2016_all_vars %>% 
-  select(median_age, median_household_income, average_household_size, 
-         persons_per_bedroom, median_weekly_rent, median_annual_mortgage, sa2_id) %>% 
-  group_by(sa2_id) %>% 
+census_2016_means <- census_2016_all_vars %>%
+  dplyr::select(median_age, median_household_income, average_household_size,
+                persons_per_bedroom, median_weekly_rent,
+                median_annual_mortgage, sa2_id) %>%
+  group_by(sa2_id) %>%
   summarise_all(mean, na.rm = TRUE)
 
-census_2016_counts <- census_2016_all_vars %>% 
-  select(n_dwellings, persons, female, male, 
-         married_persons, married_females, married_males, defacto_persons, 
-         defacto_females, defacto_males, notmarried_persons, 
-         notmarried_females, notmarried_males, indig_persons, 
-         indig_males, indig_females, non_indig_persons, 
-         non_indig_females, non_indig_males, not_stated_indig_persons, 
-         not_stated_indig_males, not_stated_indig_females, 
-         born_in_australia, born_overseas, country_not_stated, 
-         separate_house, flat_or_unit, housing_other_or_not_stated, semi_or_townhouse, 
-         dwelling_owned_outright, dwelling_owned_mortgage, dwelling_other_or_not_stated,
-         dwelling_rented, sa2_id) %>% 
-  group_by(sa2_id) %>% 
-  summarise_all(sum, na.rm = TRUE) %>% 
-  mutate(percent_female = female/persons,
-         percent_defacto = defacto_persons/persons,
-         percent_married = married_persons/persons,
-         percent_indig = indig_persons/persons,
-         percent_born_in_australia = born_in_australia/persons,
-         percent_unit = flat_or_unit/n_dwellings,
-         percent_mortgage = dwelling_owned_mortgage/n_dwellings,
-         percent_rent = dwelling_rented/n_dwellings)
+census_2016_counts <- census_2016_all_vars %>%
+  dplyr::select(n_dwellings, persons, female, male,
+                married_persons, married_females, married_males,
+                defacto_persons, defacto_females, defacto_males,
+                notmarried_persons, notmarried_females, notmarried_males,
+                indig_persons, indig_males, indig_females, non_indig_persons,
+                non_indig_females, non_indig_males, not_stated_indig_persons,
+                not_stated_indig_males, not_stated_indig_females,
+                born_in_australia, born_overseas, country_not_stated,
+                separate_house, flat_or_unit,
+                housing_other_or_not_stated, semi_or_townhouse,
+                dwelling_owned_outright, dwelling_owned_mortgage,
+                dwelling_other_or_not_stated, dwelling_rented, sa2_id) %>%
+  group_by(sa2_id) %>%
+  summarise_all(sum, na.rm = TRUE) %>%
+  mutate(percent_female = female / persons,
+         percent_defacto = defacto_persons / persons,
+         percent_married = married_persons / persons,
+         percent_indig = indig_persons / persons,
+         percent_born_in_australia = born_in_australia / persons,
+         percent_unit = flat_or_unit / n_dwellings,
+         percent_mortgage = dwelling_owned_mortgage / n_dwellings,
+         percent_rent = dwelling_rented / n_dwellings)
 ```
 
 
 So what I need is weighted demographic data for each of the polling places based on the number of people from each SLA2 who voted at the polling place. Since we don't know who voted where, and who can vote at all, we are making the naive assumptions that 
 * Voters at each SLA are similar
-* Voters are representitive of census respondents at the SLA2 level.
+* Voters are representative of census respondents at the SLA2 level.
 
 Download and load polling places by SA1
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
+```{r, error=F, message=F, warning=F}
+if (!file.exists("./Data/polling-place-by-sa1s-2016.xlsx")) {
+  download.file("https://www.aec.gov.au/Elections/Federal_Elections/2016/files/polling-place-by-sa1s-2016.xlsx",
+                "./Data/polling-place-by-sa1s-2016.xlsx", method = "libcurl")
+}
 
-download.file('https://www.aec.gov.au/Elections/Federal_Elections/2016/files/polling-place-by-sa1s-2016.xlsx', './Data/polling-place-by-sa1s-2016.xlsx', method = 'libcurl')
-
-polling_place_data <- readxl::read_xlsx('./Data/polling-place-by-sa1s-2016.xlsx')
+polling_place_data <-
+  readxl::read_xlsx("./Data/polling-place-by-sa1s-2016.xlsx")
 ```
 
 
 Aggregate polling place data to SA2
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_sa2 <- polling_place_data %>% 
-  mutate(sa2_id = floor(SA1_id / 100)) %>% 
-  group_by(year, state_ab, div_nm, pp_id, pp_nm, sa2_id) %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_sa2 <- polling_place_data %>%
+  mutate(sa2_id = floor(SA1_id / 100)) %>%
+  group_by(year, state_ab, div_nm, pp_id, pp_nm, sa2_id) %>%
   summarise(votes = sum(votes))
 
 ```
 
 Combine with demographic data and aggregate
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_demog <- polling_place_sa2 %>% 
-  mutate(sa2_id = as.character(sa2_id)) %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_demog <- polling_place_sa2 %>%
+  mutate(sa2_id = as.character(sa2_id)) %>%
   inner_join(census_2016_all_vars)
 
-polling_place_demog_means <- polling_place_demog %>% 
-  select(year, state_ab, div_nm, pp_id, pp_nm, sa2_id, votes,
-         median_age, median_household_income, average_household_size, 
-         persons_per_bedroom, median_weekly_rent, median_annual_mortgage,
-         percent_female, percent_defacto, percent_married, percent_indig, 
-         percent_born_in_australia, percent_unit, percent_mortgage, percent_rent) %>% 
-  group_by(year, state_ab, div_nm, pp_id, pp_nm) %>% 
-  summarise_at(vars(median_age, median_household_income, 
-                    average_household_size, persons_per_bedroom, median_weekly_rent, 
-                    median_annual_mortgage, percent_female, percent_defacto, 
-                    percent_married, percent_indig, percent_born_in_australia,
-                    percent_unit, percent_mortgage, 
-                    percent_rent), funs(weighted.mean(., w=votes)))
+polling_place_demog_means <- polling_place_demog %>%
+  dplyr::select(year, state_ab, div_nm, pp_id, pp_nm, sa2_id, votes,
+                median_age, median_household_income, average_household_size,
+                persons_per_bedroom, median_weekly_rent,
+                median_annual_mortgage, percent_female, percent_defacto,
+                percent_married, percent_indig, percent_born_in_australia,
+                percent_unit, percent_mortgage, percent_rent) %>%
+  group_by(year, state_ab, div_nm, pp_id, pp_nm) %>%
+  summarise_at(vars(median_age, median_household_income,
+                    average_household_size, persons_per_bedroom,
+                    median_weekly_rent, median_annual_mortgage, percent_female,
+                    percent_defacto, percent_married, percent_indig,
+                    percent_born_in_australia, percent_unit, percent_mortgage,
+                    percent_rent), funs(weighted.mean(., w = votes)))
 ```
-Add in 2pp at the polling booth level
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-election_2pp <- twoparty_pollingbooth_download() 
 
+Add in 2pp at the polling booth level
+```{r, error=F, message=F, warning=F}
+election_2pp <- twoparty_pollingbooth_download()
 ```
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp <- polling_place_demog_means %>% 
-  group_by() %>% 
+
+```{r, error=F, message=F, warning=F}
+polling_place_2pp <- polling_place_demog_means %>%
+  group_by() %>%
   rename(StateAb = state_ab,
          DivisionNm = div_nm,
          PollingPlace = pp_nm,
-         PollingPlaceID = pp_id) %>% 
+         PollingPlaceID = pp_id) %>%
   mutate(DivisionNm = toupper(DivisionNm),
-         PollingPlace = toupper(PollingPlace)) %>% 
-  left_join(election_2pp %>% 
+         PollingPlace = toupper(PollingPlace)) %>%
+  left_join(election_2pp %>%
               filter(year == 2016))
 ```
 
 Check for missing data
 
-```{r}
-polling_place_2pp %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp %>%
   summarise_all(funs(sum(is.na(.))))
 ```
 Which booths are null?
 
-```{r}
-polling_place_2pp %>% 
-  filter(is.na(TotalVotes)) %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp %>%
+  filter(is.na(TotalVotes)) %>%
   tabyl(PollingPlace)
 ```
 
-So the Absent, Postals, Pre-Poll and Provisional votes aren't in this table. Let's come back to those... 
+So the Absent, Postals, Pre-Poll and Provisional votes aren't in this table. Let"s come back to those... 
 
-```{r}
-polling_place_2pp %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp %>%
   summarise_all(funs(sum(is.null(.))))
 ```
 
 Remove the rows with NAs
 
-```{r}
-polling_place_2pp_clean <- polling_place_2pp %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean <- polling_place_2pp %>%
   filter(!is.na(TotalVotes))
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
   summarise_all(funs(sum(is.na(.))))
 ```
 
 Which polling stations have missing data? Not too concerned about post code, as there are some special booths
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  filter(is.na(median_age)|is.na(Latitude))
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  filter(is.na(median_age) | is.na(Latitude))
 ```
 Looks like mobile teams and prepoll centres, and only latitude and longitude. Will remove the Brand mobile team, as the demographic data does not look valid.
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean<- polling_place_2pp_clean %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean <- polling_place_2pp_clean %>%
   dplyr::filter(PollingPlaceID != 65161)
 ```
 
+Look at variable summaries
+
+```{r}
+skimr::skim_tee(polling_place_2pp_clean)
+```
 
 
 # Visualising Basic Statistics
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(x = LNP_Percent/100)) + stat_density(geom="line", colour = 'blue') +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(x = LNP_Percent / 100)) +
+  stat_density(geom = "line", colour = "blue") +
   theme_classic(base_size = 16) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: LNP 2 Party Preferred Percentage', x = '2PP Percentage', 
-       y = 'Density', subtitle = 'by Polling Booth, Unweighted')
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: LNP 2 Party Preferred Percentage",
+       x = "2PP Percentage", y = "Density",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(x = ALP_Percent/100)) + stat_density(geom="line", colour = 'red') +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(x = ALP_Percent / 100)) +
+  stat_density(geom = "line", colour = "red") +
   theme_classic(base_size = 16) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', x = '2PP Percentage', 
-       y = 'Density', subtitle = 'by Polling Booth, Unweighted')
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       x = "2PP Percentage", y = "Density",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(x = Swing/100)) + stat_density(geom="line", colour = 'purple') +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(x = Swing / 100)) +
+  stat_density(geom = "line", colour = "purple") +
   theme_classic(base_size = 16) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: Swing to Incumbent', x = 'Swing', 
-       y = 'Density', subtitle = 'by Polling Booth, Unweighted')
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: Swing to Incumbent", x = "Swing",
+       y = "Density", subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(x = median_household_income)) + stat_density(geom="line", colour = 'purple') +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(x = median_household_income)) +
+  stat_density(geom = "line", colour = "purple") +
   theme_classic(base_size = 16) +
-  scale_x_continuous(labels=scales::dollar) +
-  labs(title = '2016 Census: Median Income', x = 'Median Income', 
-       y = 'Density', subtitle = 'by Polling Booth, Unweighted')
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "2016 Census: Median Income", x = "Median Income",
+       y = "Density", subtitle = "by Polling Booth, Unweighted")
 ```
 
 ## State Breakdowns
 
 Can we look at these distributions by state?
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(x = ALP_Percent/100, colour = StateAb)) + 
-  stat_density(geom="line", position = 'dodge') +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(x = ALP_Percent / 100, colour = StateAb)) +
+  stat_density(geom = "line", position = "dodge") +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', x = '2PP Percentage', 
-       y = 'Frequency', subtitle = 'by Polling Booth, Unweighted')
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       x = "2PP Percentage", y = "Frequency",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
 What about by median income
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
+```{r, fig.width=12, fig.height=12, error=F, message=F, warning=F}
 polling_place_2pp_clean %>%
-  ggplot(aes(y = ALP_Percent/100, x = median_household_income, colour = StateAb)) +
+  ggplot(aes(y = ALP_Percent / 100, x = median_household_income,
+             colour = StateAb)) +
   geom_point() +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::dollar) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', x = 'Booth Median Income',
-       y = 'ALP 2pp Percentage', subtitle = 'by Polling Booth, Unweighted') +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       x = "Booth Median Income",
+       y = "ALP 2pp Percentage", subtitle = "by Polling Booth, Unweighted") +
   facet_wrap(~StateAb, nrow = 4)
 ```
 
 What about comparing NSW electorates? There seems to be an odd separation in income bands for low ALP 2pp. Could this be a regional vs city difference? 
 
 ```{r, error=F, message=F, warning=F}
-fp_booth_16 <- firstpref_pollingbooth_download() %>% 
+fp_booth_16 <- firstpref_pollingbooth_download() %>%
   filter(year == 2016)
 ```
 
 
 ```{r, error=F, message=F, warning=F}
-polling_2cp <- read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseTcpByCandidateByPollingPlaceDownload-20499.csv', skip = 1)
+polling_2cp <- read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseTcpByCandidateByPollingPlaceDownload-20499.csv", skip = 1)
 
-polling_2pp <- read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseTppByPollingPlaceDownload-20499.csv', skip = 1)
+polling_2pp <- read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseTppByPollingPlaceDownload-20499.csv", skip = 1)
 
-fp_booth_2016 <- read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-NSW.csv', skip = 1) %>% 
-  rbind(read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-VIC.csv', skip = 1)) %>% 
-  rbind(read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-QLD.csv', skip = 1)) %>% 
-  rbind(read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-SA.csv', skip = 1)) %>% 
-  rbind(read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-WA.csv', skip = 1)) %>% 
-  rbind(read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-TAS.csv', skip = 1)) %>% 
-  rbind(read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-NT.csv', skip = 1)) %>% 
-  rbind(read_csv('https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-ACT.csv', skip = 1))
+fp_booth_2016 <- read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-NSW.csv", skip = 1) %>%
+  rbind(read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-VIC.csv", skip = 1)) %>%
+  rbind(read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-QLD.csv", skip = 1)) %>%
+  rbind(read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-SA.csv", skip = 1)) %>%
+  rbind(read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-WA.csv", skip = 1)) %>%
+  rbind(read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-TAS.csv", skip = 1)) %>%
+  rbind(read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-NT.csv", skip = 1)) %>%
+  rbind(read_csv("https://results.aec.gov.au/20499/Website/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-ACT.csv", skip = 1))
 ```
 
-```{r}
-coalition_contest_2016 <- fp_booth_2016 %>% 
-  group_by(DivisionNm, PartyNm, HistoricElected) %>% 
+```{r, error=F, message=F, warning=F}
+coalition_contest_2016 <- fp_booth_2016 %>%
+  group_by(DivisionNm, PartyNm, HistoricElected) %>%
   summarise(OrdinaryVotes = sum(OrdinaryVotes)) %>%
-  filter(PartyNm %in% c('Liberal', 'Country Liberals (NT)',
-                        'Liberal National Party of Queensland',
-                        'The Nationals')) %>% 
-  group_by(DivisionNm) %>% 
-  top_n(1) %>% 
-  select(DivisionNm, PartyNm)
+  filter(PartyNm %in% c("Liberal", "Country Liberals (NT)",
+                        "Liberal National Party of Queensland",
+                        "The Nationals")) %>%
+  group_by(DivisionNm) %>%
+  top_n(1) %>%
+  dplyr::select(DivisionNm, PartyNm)
 ```
 
 If we look at a couple of the states where high income booths tend to vote strongly for the coalition as well as lower income booths, we can see that some (but not all) of the lower income booths are contested by The Nationals. This indicares (not surprisingly) that Nationals voters and Liberal voters are different socio-economically, or possibly that city and country coalition voters differ. 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
+
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
   mutate(DivisionNm = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(coalition_contest_2016) %>% 
-  filter(StateAb == 'NSW') %>% 
-  ggplot(aes(y = ALP_Percent/100, x = median_household_income, colour = PartyNm)) +
+  inner_join(coalition_contest_2016) %>%
+  filter(StateAb == "NSW") %>%
+  ggplot(aes(y = ALP_Percent / 100, x = median_household_income,
+             colour = PartyNm)) +
   geom_point(size = 3) +
-  theme_classic(base_size = 16) + scale_color_manual(values = c('blue', 'dark green')) +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::dollar) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', x = 'Booth Median Income',
-       y = 'ALP 2pp Percentage', colour = 'Coalition Party', 
-       subtitle = 'by Polling Booth, Unweighted (NSW)') 
+  theme_classic(base_size = 16) +
+  scale_color_manual(values = c("blue", "dark green")) +
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       x = "Booth Median Income",
+       y = "ALP 2pp Percentage", colour = "Coalition Party",
+       subtitle = "by Polling Booth, Unweighted (NSW)")
 ```
 
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
   mutate(DivisionNm = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(coalition_contest_2016) %>% 
-  filter(StateAb == 'VIC') %>% 
-  ggplot(aes(y = ALP_Percent/100, x = median_household_income, colour = PartyNm)) +
+  inner_join(coalition_contest_2016) %>%
+  filter(StateAb == "VIC") %>%
+  ggplot(aes(y = ALP_Percent / 100, x = median_household_income,
+             colour = PartyNm)) +
   geom_point(size = 3) +
-  theme_classic(base_size = 16) + scale_color_manual(values = c('blue', 'dark green')) +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::dollar) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', x = 'Booth Median Income',
-       y = 'ALP 2pp Percentage', colour = 'Coalition Party', 
-       subtitle = 'by Polling Booth, Unweighted (VIC)') 
+  theme_classic(base_size = 16) +
+  scale_color_manual(values = c("blue", "dark green")) +
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       x = "Booth Median Income",
+       y = "ALP 2pp Percentage", colour = "Coalition Party",
+       subtitle = "by Polling Booth, Unweighted (VIC)")
 ```
 
 This effect is less clear in states where the Nationals aren't as prominent, either because the Nationals aren't as prominent (SA, WA, TAS), or are merged with the Liberals (QLD).  
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
   mutate(DivisionNm = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(coalition_contest_2016) %>% 
-  filter(StateAb == 'WA') %>% 
-  ggplot(aes(y = ALP_Percent/100, x = median_household_income, colour = PartyNm)) +
+  inner_join(coalition_contest_2016) %>%
+  filter(StateAb == "WA") %>%
+  ggplot(aes(y = ALP_Percent / 100, x = median_household_income,
+             colour = PartyNm)) +
   geom_point(size = 3) +
-  theme_classic(base_size = 16) + scale_color_manual(values = c('blue', 'dark green')) +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::dollar) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', x = 'Booth Median Income',
-       y = 'ALP 2pp Percentage', colour = 'Coalition Party', 
-       subtitle = 'by Polling Booth, Unweighted (WA)') 
+  theme_classic(base_size = 16) +
+  scale_color_manual(values = c("blue", "dark green")) +
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       x = "Booth Median Income",
+       y = "ALP 2pp Percentage", colour = "Coalition Party",
+       subtitle = "by Polling Booth, Unweighted (WA)")
 ```
 
 
 Perhaps we would be better off using the geographical classifications from the AEC.
 
-```{r}
-library(rvest)
+```{r, error=F, message=F, warning=F}
+webpage <-
+  read_html("http://results.aec.gov.au/20499/Website/HouseDivisionClassifications-20499-NAT.htm")
 
-webpage <- read_html("http://results.aec.gov.au/20499/Website/HouseDivisionClassifications-20499-NAT.htm")
-
-Division_Classifications <- webpage %>%
-  html_nodes("#divisionClassifications") %>% 
+division_classifications <- webpage %>%
+  html_nodes("#divisionClassifications") %>%
   html_table(fill = TRUE) %>%
   .[[1]]
-Division_Classifications <- Division_Classifications %>% 
-  filter(Division != 'Total Enrolment')
 
-polling_place_2pp_clean<- polling_place_2pp_clean %>% 
+division_classifications <- division_classifications %>%
+  filter(Division != "Total Enrolment")
+
+polling_place_2pp_clean <- polling_place_2pp_clean %>%
   mutate(Division = stringr::str_to_title(DivisionNm)) %>%
-  inner_join(Division_Classifications)
+  inner_join(division_classifications)
 ```
 
 The graph below shows that the booths that have a low ALP 2pp and a low median income are primarily rural booths. This relationship seems stronger than the Lib/Nat split.
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  filter(StateAb == 'NSW') %>% 
-  ggplot(aes(y = ALP_Percent/100, x = median_household_income, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  filter(StateAb == "NSW") %>%
+  ggplot(aes(y = ALP_Percent / 100, x = median_household_income,
+             colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::dollar) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', 
-       y = 'ALP 2pp Percentage',
-       x = 'Booth Median Income', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted (NSW)')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Booth Median Income", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted (NSW)")
 ```
 
 Looking at all states we see a similar relationship, although less strong than in NSW.
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = median_household_income, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = median_household_income,
+             colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::dollar) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Median Booth Income', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::dollar) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Median Booth Income", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
 What about some of the other variables?
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = average_household_size, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = average_household_size,
+             colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Average Household Size', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Average Household Size", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = percent_female, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = percent_female, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_x_continuous(labels=scales::percent) +
-  scale_y_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Percent Female', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_x_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Percent Female", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r}
-polling_place_2pp_clean %>% 
-  select(ALP_Percent, Swing, median_age, median_household_income, average_household_size,
-         persons_per_bedroom, median_weekly_rent, median_annual_mortgage,
-         percent_female, percent_defacto, percent_born_in_australia,
-         percent_unit, percent_mortgage, percent_rent) %>% 
-  cor %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  dplyr::select(ALP_Percent, Swing, median_age, median_household_income,
+                average_household_size, persons_per_bedroom, median_weekly_rent,
+                median_annual_mortgage, percent_female, percent_defacto,
+                percent_born_in_australia,
+                percent_unit, percent_mortgage, percent_rent) %>%
+  cor %>%
   kable()
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = persons_per_bedroom, colour = Demographic)) +
+Note that there appear to be lots of NAs for the housing data. Need to fix/impute.
+
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = persons_per_bedroom,
+             colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Persons per Bedroom', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Persons per Bedroom", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = percent_unit, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = percent_unit, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Percent of Dwellings - Unit', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Percent of Dwellings - Unit", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = percent_mortgage, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = percent_mortgage,
+             colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Percent of Dwellings - Under Mortgage', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Percent of Dwellings - Under Mortgage", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = percent_rent, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = percent_rent, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Percent of Dwellings - Renting', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Percent of Dwellings - Renting", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = percent_indig, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = percent_indig, colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Percent Indigeneous', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Percent Indigeneous", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = percent_born_in_australia, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = percent_born_in_australia,
+             colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Percent Born in Australia', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Percent Born in Australia", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
-```{r, fig.width=4, fig.height=4, error=F, message=F, warning=F}
-polling_place_2pp_clean %>% 
-  ggplot(aes(y = ALP_Percent/100, x = percent_defacto, colour = Demographic)) +
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean %>%
+  ggplot(aes(y = ALP_Percent / 100, x = percent_defacto,
+             colour = Demographic)) +
   geom_point(size = 1) +
   theme_classic(base_size = 16) + scale_color_brewer(palette = "Dark2") +
-  theme(legend.position = 'bottom') +
-  scale_y_continuous(labels=scales::percent) +
-  scale_x_continuous(labels=scales::percent) +
-  labs(title = '2016 Election: ALP 2 Party Preferred Percentage', y = 'ALP 2pp Percentage',
-       x = 'Percent in a Defacto Relationship', colour = 'Region',
-       subtitle = 'by Polling Booth, Unweighted')
+  theme(legend.position = "bottom") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "2016 Election: ALP 2 Party Preferred Percentage",
+       y = "ALP 2pp Percentage",
+       x = "Percent in a Defacto Relationship", colour = "Region",
+       subtitle = "by Polling Booth, Unweighted")
 ```
 
 # What to do next?
@@ -615,35 +729,28 @@ Build models
 
 Can we build a simple linear model to predict 2pp
 
-```{r}
-library(MASS)
-library(car)
-alp_2pp_lm_demog <- 
-  lm(ALP_Percent ~ median_household_income*Demographic + percent_indig + 
-       percent_female + percent_defacto + percent_born_in_australia + 
-       percent_rent + median_weekly_rent + median_age, 
+```{r, error=F, message=F, warning=F}
+alp_2pp_lm_demog <-
+  lm(ALP_Percent ~ median_household_income * Demographic + percent_indig +
+       percent_female + percent_defacto + percent_born_in_australia +
+       percent_rent + median_weekly_rent + median_age,
      data = polling_place_2pp_clean)
 
 summary(alp_2pp_lm_demog)
 anova(alp_2pp_lm_demog)
 plot(alp_2pp_lm_demog)
 vif(alp_2pp_lm_demog)
-# crPlots(alp_2pp_lm_demog)
-# ceresPlots(alp_2pp_lm_demog)
 
-library(gvlma)
 gv_alp_2pp_lm_demog <- gvlma(alp_2pp_lm_demog)
 summary(gv_alp_2pp_lm_demog)
 ```
 
 
-```{r}
-library(MASS)
-library(car)
-alp_2pp_lm_demog <- 
-  lm(ALP_Percent ~ median_household_income + Demographic + percent_indig + 
-       percent_defacto + percent_born_in_australia + 
-       percent_rent + median_weekly_rent + median_age, 
+```{r, error=F, message=F, warning=F}
+alp_2pp_lm_demog <-
+  lm(ALP_Percent ~ median_household_income + Demographic + percent_indig +
+       percent_defacto + percent_born_in_australia +
+       percent_rent + median_weekly_rent + median_age,
      data = polling_place_2pp_clean)
 
 summary(alp_2pp_lm_demog)
@@ -653,31 +760,28 @@ vif(alp_2pp_lm_demog)
 crPlots(alp_2pp_lm_demog)
 ceresPlots(alp_2pp_lm_demog)
 
-library(gvlma)
 gv_alp_2pp_lm_demog <- gvlma(alp_2pp_lm_demog)
 summary(gv_alp_2pp_lm_demog)
 ```
 
 We know that income is important in the non-rural areas, so it might be worth adding an interaction between rural and non-rural and income.
 
-```{r}
-polling_place_2pp_clean <- polling_place_2pp_clean %>% 
-  mutate(NonRural_Demographic = if_else(Demographic == 'Rural', 1, 0),
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean <- polling_place_2pp_clean %>%
+  mutate(NonRural_Demographic = if_else(Demographic == "Rural", 1, 0),
          ALP_Percent_2013 = ALP_Percent + Swing)
 
-alp_2pp_lm_demog <- 
-  lm(ALP_Percent ~ median_household_income + Demographic + percent_indig + 
-       percent_defacto + percent_born_in_australia + 
+alp_2pp_lm_demog <-
+  lm(ALP_Percent ~ median_household_income + Demographic + percent_indig +
+       percent_defacto + percent_born_in_australia +
        percent_rent + median_weekly_rent + median_age +
-       NonRural_Demographic:median_household_income, 
+       NonRural_Demographic:median_household_income,
      data = polling_place_2pp_clean)
 
 summary(alp_2pp_lm_demog)
 anova(alp_2pp_lm_demog)
 plot(alp_2pp_lm_demog)
 vif(alp_2pp_lm_demog)
-# crPlots(alp_2pp_lm_demog)
-# ceresPlots(alp_2pp_lm_demog)
 
 gv_alp_2pp_lm_demog <- gvlma(alp_2pp_lm_demog)
 summary(gv_alp_2pp_lm_demog)
@@ -688,35 +792,32 @@ summary(gv_alp_2pp_lm_demog)
 
 Using a lasso regression, 
 
-```{r}
-library(caret)
-library(glmnet)
-
-polling_place_2pp_clean_NA <- na.omit(polling_place_2pp_clean) %>% 
-  dplyr::select(ALP_Percent, StateAb, median_age, median_household_income, 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean_na <- na.omit(polling_place_2pp_clean) %>%
+  dplyr::select(ALP_Percent, StateAb, median_age, median_household_income,
                 average_household_size, persons_per_bedroom, median_weekly_rent,
-                median_annual_mortgage,  percent_female, percent_defacto, 
-                percent_married, percent_indig, percent_born_in_australia, 
+                median_annual_mortgage,  percent_female, percent_defacto,
+                percent_married, percent_indig, percent_born_in_australia,
                 percent_unit, percent_mortgage, percent_rent, Demographic)
 # Inspect the data
-sample_n(polling_place_2pp_clean_NA, 3)
+sample_n(polling_place_2pp_clean_na, 3)
 # Split the data into training and test set
 set.seed(123)
-training.samples <- polling_place_2pp_clean_NA$ALP_Percent %>% 
+training_samples <- polling_place_2pp_clean_na$ALP_Percent %>%
   createDataPartition(p = 0.8, list = FALSE)
-train.data  <- polling_place_2pp_clean_NA[training.samples, ]
-test.data <- polling_place_2pp_clean_NA[-training.samples, ]
+train_data  <- polling_place_2pp_clean_na[training_samples, ]
+test_data <- polling_place_2pp_clean_na[-training_samples, ]
 
-# Dumy code categorical predictor variables
-x <- model.matrix(ALP_Percent~., train.data)[,-1]
+# Dummy code categorical predictor variables
+x <- model.matrix(ALP_Percent~., train_data)[, -1]
 # Convert the outcome (class) to a numerical variable
-y <- train.data$ALP_Percent
+y <- train_data$ALP_Percent
 
-cv.lasso <- cv.glmnet(x, y, alpha = 1, family = "gaussian")
+cv_lasso <- cv.glmnet(x, y, alpha = 1, family = "gaussian")
 
 # Fit the final model on the training data
 alp_2pp_lasso_demog <- glmnet(x, y, alpha = 1, family = "gaussian",
-                              lambda = cv.lasso$lambda.min)
+                              lambda = cv_lasso$lambda.min)
 # Display regression coefficients
 coef(alp_2pp_lasso_demog)
 
@@ -725,53 +826,56 @@ summary(alp_2pp_lasso_demog)
 alp_2pp_lasso_demog$dev.ratio
 
 # Make predictions on the test data
-x.test <- model.matrix(ALP_Percent ~., test.data)[,-1]
-predictions <- alp_2pp_lasso_demog %>% predict(newx = x.test)
+x_test <- model.matrix(ALP_Percent ~., test_data)[, -1]
+predictions <- alp_2pp_lasso_demog %>% predict(newx = x_test)
 # Model accuracy
-observed <- test.data$ALP_Percent
+observed <- test_data$ALP_Percent
 
 plot(predictions, observed)
 cor(predictions, observed)
 
 cor(predictions, observed)^2
+
+Metrics::rmse(actual = observed,
+              predicted = predictions)
 ```
 
 
 What if we include the 2pp from the last election. It appears that Swing is defined as the swing to the Coalition between 2013 and 2016. So if we add the swing to the 2016 2pp, then we obtain the 2013 2pp.
 
 When using a Linear Model, we can get an R^2 of about 84%
-```{r}
-polling_place_2pp_clean <- polling_place_2pp_clean %>% 
-  mutate(logit_ALP_Percent = log((ALP_Percent/100)/(1-ALP_Percent/100)),
-         logit_ALP_Percent_2013 = log((ALP_Percent_2013/100)/(1-ALP_Percent_2013/100))) %>% 
-  filter(!is.nan(logit_ALP_Percent)) %>% 
-  filter(!is.na(logit_ALP_Percent)) %>% 
-  filter(!is.infinite(logit_ALP_Percent)) %>% 
-  filter(!is.nan(logit_ALP_Percent_2013)) %>% 
-  filter(!is.na(logit_ALP_Percent_2013)) %>% 
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean <- polling_place_2pp_clean %>%
+  mutate(logit_ALP_Percent =
+           log((ALP_Percent / 100) / (1 - ALP_Percent / 100)),
+         logit_ALP_Percent_2013 =
+           log((ALP_Percent_2013 / 100) / (1 - ALP_Percent_2013 / 100))) %>%
+  filter(!is.nan(logit_ALP_Percent)) %>%
+  filter(!is.na(logit_ALP_Percent)) %>%
+  filter(!is.infinite(logit_ALP_Percent)) %>%
+  filter(!is.nan(logit_ALP_Percent_2013)) %>%
+  filter(!is.na(logit_ALP_Percent_2013)) %>%
   filter(!is.infinite(logit_ALP_Percent_2013))
 
-alp_2pp_lm_demog_lag <- 
+alp_2pp_lm_demog_lag <-
   lm(logit_ALP_Percent ~ percent_indig + percent_defacto +
-       percent_rent + median_weekly_rent + median_age + 
-       NonRural_Demographic*median_household_income + logit_ALP_Percent_2013, 
+       percent_rent + median_weekly_rent + median_age +
+       NonRural_Demographic * median_household_income + logit_ALP_Percent_2013,
      data = polling_place_2pp_clean)
 
 summary(alp_2pp_lm_demog_lag)
 anova(alp_2pp_lm_demog_lag)
 plot(alp_2pp_lm_demog_lag)
 vif(alp_2pp_lm_demog_lag)
-# crPlots(alp_2pp_lm_demog_lag)
-# ceresPlots(alp_2pp_lm_demog_lag)
 
 gv_alp_2pp_lm_demog_lag <- gvlma(alp_2pp_lm_demog_lag)
 summary(alp_2pp_lm_demog_lag)
 ```
 
 It would be interesting to see whether 2013 alone is a good predictor. Fitting this model gives an R^2 of 82.7%. This means that the other variables add a bit, but not a huge amount. 
-```{r}
-alp_2pp_lm_demog_lag <- 
-  lm(logit_ALP_Percent ~ logit_ALP_Percent_2013, 
+```{r, error=F, message=F, warning=F}
+alp_2pp_lm_demog_lag <-
+  lm(logit_ALP_Percent ~ logit_ALP_Percent_2013,
      data = polling_place_2pp_clean)
 
 summary(alp_2pp_lm_demog_lag)
@@ -779,15 +883,119 @@ anova(alp_2pp_lm_demog_lag)
 plot(alp_2pp_lm_demog_lag)
 ```
 
-There are three outlying values - let's explore these
+There are three outlying values - let"s explore these
 
-```{r}
-polling_place_2pp_clean[c(2079, 7267, 2758),]
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_clean[c(2079, 7267, 2758), ]
 ```
 
-These booths have fewer than 40 electors, and fewer than 5 for one of the two parties. They are also 'non-standard' booths.
+These booths have fewer than 40 electors, and fewer than 5 for one of the two parties. They are also "non-standard" booths.
 
 It might be interesting to see which booths deviate from the division mean.
+
+
+## Trying GBM
+
+Can we fit a gradient boosting machine to improve fit (while trading off raw explainability)
+
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_gbm <- polling_place_2pp_clean %>%
+  clean_names() %>%
+  dplyr::select(-year, -division_nm, -polling_place_id, -polling_place,
+                -division, -premises_post_code, -division_id, -state,
+                -enrolment, -successful_party, -seat_status, -alp_percent,
+                -lnp_percent, -lnp_votes, -alp_votes, -total_votes, -swing) %>%
+  mutate(state_ab = factor(state_ab),
+         demographic = factor(demographic),
+         previous_party = factor(previous_party),
+         previous_seat_status = factor(previous_seat_status))
+
+
+polling_place_2pp_split <- initial_split(polling_place_2pp_gbm, prop = .8)
+polling_place_2pp_train <- training(polling_place_2pp_split)
+polling_place_2pp_test  <- testing(polling_place_2pp_split)
+
+
+polling_place_2pp_gbm1 <- gbm::gbm(logit_alp_percent ~.,
+                                   data = polling_place_2pp_train,
+                                   distribution = "gaussian",
+                                   verbose = F,
+                                   shrinkage = 0.1,
+                                   interaction.depth = 2,
+                                   n.minobsinnode = 10,
+                                   n.trees = 5000,
+                                   cv.folds = 10)
+
+perf_gbm1 <- gbm.perf(polling_place_2pp_gbm1, method = "cv")
+```
+
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_prediction_1 <- stats::predict(
+  object = polling_place_2pp_gbm1,
+  newdata = polling_place_2pp_test,
+  n.trees = perf_gbm1)
+rmse_fit1 <- Metrics::rmse(actual = polling_place_2pp_test$logit_alp_percent,
+                           predicted = polling_place_2pp_prediction_1)
+print(rmse_fit1)
+```
+
+
+```{r, error=F, message=F, warning=F}
+data.frame(actual = polling_place_2pp_test$logit_alp_percent,
+           predicted = polling_place_2pp_prediction_1) %>%
+  ggplot(aes(x = predicted, y = actual)) + geom_point() +
+  geom_abline(slope = 1, intercept = 0, colour = "blue") +
+  theme_classic()
+```
+
+
+```{r, error=F, message=F, warning=F}
+gbm::plot.gbm(polling_place_2pp_gbm1, i.var = 8)
+```
+
+When looking at variable importance, it is clear that the most important factor is the 2pp vote in the previous election.
+
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_effects <-
+  tibble::as_tibble(gbm::summary.gbm(polling_place_2pp_gbm1, plotit = FALSE))
+polling_place_2pp_effects %>% utils::head(n = 15)
+```
+
+```{r, error=F, message=F, warning=F}
+polling_place_2pp_effects %>%
+  # arrange descending to get the top influencers
+  dplyr::arrange(desc(rel.inf)) %>%
+  # sort to top 10
+  dplyr::top_n(10) %>%
+  # plot these data using columns
+  ggplot(aes(x = forcats::fct_reorder(.f = var,
+                                      .x = rel.inf),
+             y = rel.inf,
+             fill = rel.inf)) +
+  geom_col() +
+  # flip
+  coord_flip() +
+  # format
+  scale_color_brewer(palette = "Dark2") +
+  theme(axis.title = element_text()) +
+  theme_classic() +
+  xlab("Features") +
+  ylab("Relative Influence") +
+  ggtitle("Top 10 Drivers of 2pp vote")
+```
+
+### Using caret functions
+<!-- # ```{r} -->
+<!-- # control <- trainControl(method = "repeatedcv", number = 10, repeats = 3) -->
+<!-- # caret_gbm <- train(logit_alp_percent  ~ ., data = polling_place_2pp_train, -->
+<!-- #                    method = "gbm", trControl = control, verbose = FALSE) -->
+<!-- # gbm_ests <- predict(caret_gbm, newdata = polling_place_2pp_test) -->
+<!-- # ``` -->
+
+
+## Outlying booths
+
+
 
 
 

@@ -60,6 +60,9 @@ library(caret)
 library(glmnet)
 library(gbm)
 library(rsample)
+library(tidymodels)
+library(stacks)
+library(ranger)
 
 knitr::opts_chunk$set(message = FALSE)
 options(scipen = 1000)
@@ -984,14 +987,280 @@ polling_place_2pp_effects %>%
   ggtitle("Top 10 Drivers of 2pp vote")
 ```
 
-### Using caret functions
-<!-- # ```{r} -->
-<!-- # control <- trainControl(method = "repeatedcv", number = 10, repeats = 3) -->
-<!-- # caret_gbm <- train(logit_alp_percent  ~ ., data = polling_place_2pp_train, -->
-<!-- #                    method = "gbm", trControl = control, verbose = FALSE) -->
-<!-- # gbm_ests <- predict(caret_gbm, newdata = polling_place_2pp_test) -->
-<!-- # ``` -->
 
+### Using the Stacks package to compare models
+
+We can use the skim function to summarise the covariates and outcome variables that we will be modelling on. 
+
+```{r}
+polling_place_2pp_model <- polling_place_2pp_clean %>%
+  clean_names() %>%
+  dplyr::select(-year, -division_nm, -polling_place_id, -polling_place,
+                -division, -premises_post_code, -division_id, -state,
+                -enrolment, -successful_party, -seat_status, -alp_percent,
+                -lnp_percent, -lnp_votes, -alp_votes, -total_votes, -swing,
+                -alp_percent_2013) %>%
+  mutate(state_ab = factor(state_ab),
+         demographic = factor(demographic),
+         previous_party = factor(previous_party),
+         previous_seat_status = factor(previous_seat_status))
+
+skim(polling_place_2pp_model)
+```
+
+We can see that there is some missing data for latitude, longitude, and dwelling statistics. We will impute these using KNN imputation.
+
+
+
+```{r}
+polling_place_2pp_split <- initial_split(polling_place_2pp_model, prop = .8)
+polling_place_2pp_train <- training(polling_place_2pp_split)
+polling_place_2pp_test  <- testing(polling_place_2pp_split)
+
+
+training_folds <- vfold_cv(polling_place_2pp_train, v = 10)
+
+polling_place_2pp_rec <- recipe(logit_alp_percent ~ ., 
+                                data = polling_place_2pp_train) %>% 
+  step_knnimpute(all_predictors()) %>% 
+  step_dummy(all_predictors(), -all_numeric()) 
+
+metric <- metric_set(rmse)
+```
+
+
+```{r}
+```
+
+Create some candidate models
+```{r}
+ctrl_grid <- control_stack_grid()
+ctrl_res <- control_stack_resamples()
+```
+
+#### Linear Regression
+
+```{r}
+lm_spec <- 
+  linear_reg() %>% 
+  set_engine("lm")
+
+lm_wflow <- 
+  workflow() %>%
+  add_model(lm_spec) %>%
+  add_recipe(polling_place_2pp_rec)
+
+lm_resample <- 
+  fit_resamples(
+    lm_wflow,
+    resamples = training_folds,
+    metrics = metric,
+    control = ctrl_res
+  )
+```
+
+#### Linear regression with lasso
+
+```{r}
+lasso_spec <- 
+  linear_reg(penalty = tune("pen"), mixture = tune("mix")) %>% 
+  set_engine("glmnet")
+
+lasso_wflow <- 
+  workflow() %>%
+  add_model(lasso_spec) %>%
+  add_recipe(polling_place_2pp_rec)
+
+#Fix
+lasso_resample <- 
+  tune_grid(
+    lasso_wflow,
+    resamples = training_folds,
+    metrics = metric,
+    grid = 6,
+    control = ctrl_res
+  )
+```
+
+#### Random Forest
+
+```{r}
+random_forest_spec <- 
+  rand_forest(mode = "regression", mtry = tune("num_pred"), 
+              min_n = tune("min_n")) %>% 
+  set_engine("ranger")
+
+random_forest_wflow <- 
+  workflow() %>%
+  add_model(random_forest_spec) %>%
+  add_recipe(polling_place_2pp_rec)
+
+#Fix
+random_forest_resample <- 
+  tune_grid(
+    random_forest_wflow,
+    resamples = training_folds,
+    metrics = metric,
+    grid = 6,
+    control = ctrl_res
+  )
+```
+
+
+#### K nearest neighbours
+
+```{r}
+knn_spec <-
+  nearest_neighbor(
+    mode = "regression", 
+    neighbors = tune("k")
+  ) %>%
+  set_engine("kknn")
+
+knn_wflow <- 
+  workflow() %>%
+  add_model(knn_spec) %>%
+  add_recipe(polling_place_2pp_rec)
+
+#Fix
+knn_resample <- 
+  tune_grid(
+    knn_wflow,
+    resamples = training_folds,
+    metrics = metric,
+    grid = 6,
+    control = ctrl_res
+  )
+```
+
+#### Gradient boosting machine
+```{r}
+gbm_spec <- 
+  boost_tree(
+    tree_depth = tune("tree_depth"),
+    learn_rate = tune("learn_rate"),
+    loss_reduction = tune("loss_reduction")
+  ) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+gbm_wflow <- 
+  workflow() %>%
+  add_model(gbm_spec) %>%
+  add_recipe(polling_place_2pp_rec)
+
+#Fix
+gbm_resample <- 
+  tune_grid(
+    gbm_wflow,
+    resamples = training_folds,
+    metrics = metric,
+    grid = 10,
+    control = ctrl_res
+  )
+```
+
+#### Support Vector Machine
+
+```{r}
+svm_spec <- 
+  svm_rbf(
+    cost = tune("cost"), 
+    rbf_sigma = tune("sigma")
+  ) %>%
+  set_engine("kernlab") %>%
+  set_mode("regression")
+
+
+svm_wflow <- 
+  workflow() %>%
+  add_model(svm_spec) %>%
+  add_recipe(polling_place_2pp_rec)
+
+#Fix
+svm_resample <- 
+  tune_grid(
+    svm_wflow,
+    resamples = training_folds,
+    metrics = metric,
+    grid = 6,
+    control = ctrl_res
+  )
+```
+
+
+#### Creating a ensemble of these models
+
+```{r}
+polling_place_2pp_stack <-
+  stacks() %>%
+  add_candidates(lm_resample) %>%
+  add_candidates(lasso_resample) %>%
+  add_candidates(random_forest_resample) %>%
+  add_candidates(knn_resample) %>%
+  add_candidates(gbm_resample) %>%
+  add_candidates(svm_resample)
+```
+
+
+```{r}
+polling_place_2pp_stack <-
+  polling_place_2pp_stack %>%
+  blend_predictions()
+```
+
+
+```{r}
+theme_set(theme_classic(base_size = 16))
+autoplot(polling_place_2pp_stack)
+
+autoplot(polling_place_2pp_stack, type = "weights")
+```
+
+```{r}
+polling_place_2pp_stack <-
+  polling_place_2pp_stack %>%
+  fit_members()
+```
+
+```{r}
+collect_parameters(polling_place_2pp_stack, "lasso_resample")
+collect_parameters(polling_place_2pp_stack, "knn_resample")
+collect_parameters(polling_place_2pp_stack, "random_forest_resample")
+collect_parameters(polling_place_2pp_stack, "gbm_resample")
+collect_parameters(polling_place_2pp_stack, "svm_resample")
+```
+
+#### Testing 
+
+```{r}
+polling_place_2pp_test <- 
+  polling_place_2pp_test %>%
+  bind_cols(predict(polling_place_2pp_stack, .))
+  
+  ggplot(polling_place_2pp_test) +
+  aes(x = logit_alp_percent, 
+      y = .pred) +
+  geom_point() + 
+  coord_obs_pred()
+```
+
+
+```{r}
+member_preds <- 
+  polling_place_2pp_test %>%
+  dplyr::select(logit_alp_percent) %>%
+  bind_cols(predict(polling_place_2pp_stack, polling_place_2pp_test,
+                    members = TRUE))
+
+map_dfr(member_preds, rmse, truth = logit_alp_percent, data = member_preds) %>%
+  mutate(member = colnames(member_preds))
+
+map_dfr(member_preds, rsq, truth = logit_alp_percent, data = member_preds) %>%
+  mutate(member = colnames(member_preds))
+```
+
+Interestingly, an ensemble only gives us a 1.5% increase in R^2 over a linear model, with the best random forests outperforming linear regression by about 1%
 
 ## Outlying booths
 

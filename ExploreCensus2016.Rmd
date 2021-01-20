@@ -1028,10 +1028,6 @@ polling_place_2pp_rec <- recipe(logit_alp_percent ~ .,
 metric <- metric_set(rmse)
 ```
 
-
-```{r}
-```
-
 Create some candidate models
 ```{r}
 ctrl_grid <- control_stack_grid()
@@ -1137,6 +1133,7 @@ knn_resample <-
 ```{r}
 gbm_spec <- 
   boost_tree(
+    min_n = tune("min_n"),
     tree_depth = tune("tree_depth"),
     learn_rate = tune("learn_rate"),
     loss_reduction = tune("loss_reduction")
@@ -1155,7 +1152,7 @@ gbm_resample <-
     gbm_wflow,
     resamples = training_folds,
     metrics = metric,
-    grid = 10,
+    grid = 80,
     control = ctrl_res
   )
 ```

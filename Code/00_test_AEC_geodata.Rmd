@@ -1,0 +1,131 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup}
+library(sf)
+library(terra)
+library(spData)
+library(tmap)
+library(rmapshaper)
+library(tidyverse)
+library(lattice)
+library(leafpop)
+library(mapview)
+library(viridis)
+library(RColorBrewer)
+
+tmap_options(check.and.fix = TRUE)
+# Sourced from https://www.aec.gov.au/electorates/gis/index.htm
+
+#QLD 2021 is rubbish - use 2018 map instead
+
+boundaries_2021 <- read_sf("../Data/2021_ELB_region.shp")
+boundaries_2019 <- read_sf("../Data/COM_ELB_region.shp")
+#2016 is 2013 with updated NSW, WA, ACT
+# boundaries_2021 <- read_sf("../Data/2021_ELB_region.shp")
+# boundaries_2021 <- read_sf("../Data/2021_ELB_region.shp")
+```
+
+```{r}
+# Simplify the polygons to reduce the size
+boundaries_2021_sim <- ms_simplify(boundaries_2021)
+```
+
+
+```{r}
+tm_shape(boundaries_2021_sim) +
+  tm_polygons()
+```
+
+```{r}
+tm_shape(boundaries_2021 %>%
+           subset(Elect_div %in% c("Barton", "Watson", "Grayndler"))) +
+  tm_polygons()
+```
+
+Can we add polling places?
+
+```{r}
+if (file.exists("../Data/polling_place_2pp_clean.RDS")) {
+  polling_place_2pp_clean <- readRDS("../Data/polling_place_2pp_clean.RDS")
+} else {
+  source('../Code/1_Data_Sourcing.R')
+  source('../Code/2_Data_Cleaning.R')
+}
+```
+
+```{r}
+small_pp <- polling_place_2pp_clean %>% 
+  filter(DivisionNm %in% c("BARTON", "WATSON", "GRAYNDLER")) %>% 
+  filter(!str_detect(PollingPlace, "HOSPITAL")) %>% 
+  filter(!str_detect(PollingPlace, "PREPOLL")) %>% 
+  filter(!str_detect(PollingPlace, "PPVC")) %>% 
+  select(DivisionNm, PollingPlace, ALP_Percent, TotalVotes, Latitude, Longitude)
+```
+
+
+```{r}
+small_pp <- st_as_sf(small_pp %>% 
+                       mutate(label_txt = paste0(str_to_title(PollingPlace), ": ", ALP_Percent, "%")), 
+                     coords = c("Longitude", "Latitude"), agr = "constant")
+```
+
+
+```{r}
+library(leafem)
+
+mapview(boundaries_2021 %>%
+           subset(Elect_div %in% c("Barton", "Watson", "Grayndler")),
+        legend = FALSE, alpha.regions = 0.05, label = "Elect_div", 
+        col.regions = brewer.pal(5, "Greens")) +
+  mapview(small_pp, zcol = "ALP_Percent", col.regions = rev(brewer.pal(11, "RdBu")), 
+          at = c(0,seq(30,70,5),100), cex = "TotalVotes", label = "label_txt",
+          layer.name = "ALP 2pp %")# %>%
+  # addStaticLabels(label = small_pp$ALP_Percent,
+  #                 noHide = TRUE,
+  #                 direction = 'top',
+  #                 textOnly = TRUE,
+  #                 textsize = "10px")
+```
+
+Interactive Map of whole country
+
+```{r, fig.width=12, fig.height=12}
+large_pp <- polling_place_2pp_clean %>% 
+  # filter(DivisionNm %in% c("BARTON", "WATSON", "GRAYNDLER")) %>% 
+  filter(!str_detect(PollingPlace, "HOSPITAL")) %>% 
+  filter(!str_detect(PollingPlace, "PREPOLL")) %>% 
+  filter(!str_detect(PollingPlace, "PPVC")) %>% 
+  filter(!is.na(Longitude)) %>% 
+  filter(!is.na(Latitude)) %>% 
+  select(DivisionNm, PollingPlace, ALP_Percent, Swing, TotalVotes, Latitude, Longitude)
+large_pp <- st_as_sf(large_pp %>% 
+                       mutate(label_txt = paste0(str_to_title(PollingPlace), ": ", ALP_Percent, "%")), 
+                     coords = c("Longitude", "Latitude"), agr = "constant")
+mapview(boundaries_2021,
+        legend = FALSE, alpha.regions = 0.05, label = "Elect_div", 
+        col.regions = brewer.pal(5, "Greens")) +
+  mapview(large_pp, zcol = "ALP_Percent", col.regions = rev(brewer.pal(11, "RdBu")), 
+          at = c(0,seq(30,70,5),100), cex = "TotalVotes", label = "label_txt",
+          layer.name = "ALP 2pp %")
+```
+
+To do: Create a function to map electorates. 
+
+
+Plot the swing
+
+
+```{r, fig.width=12, fig.height=12}
+large_pp <- st_as_sf(large_pp %>% 
+                       mutate(label_txt = paste0(str_to_title(PollingPlace), ": ", Swing, "%")), 
+                     coords = c("Longitude", "Latitude"), agr = "constant")
+mapview(boundaries_2021,
+        legend = FALSE, alpha.regions = 0.05, label = "Elect_div", 
+        col.regions = brewer.pal(5, "Greens")) +
+  mapview(large_pp, zcol = "Swing", col.regions = rev(brewer.pal(11, "RdBu")), 
+          at = c(-100,seq(-15,15,3),100), cex = "TotalVotes", label = "label_txt",
+          layer.name = "Swing %")
+```
